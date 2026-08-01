@@ -7,7 +7,7 @@
 
 ## Installation
 
-Ensure you have Python 3.10+ installed. You can install the package directly from PyPI:
+Ensure you have Python 3.10+ installed. You can install the package directly from [PyPI](https://pypi.org/project/doors-client/):
 
 ```bash
 pip install doors-client
@@ -21,10 +21,10 @@ pip install -e .
 
 ## Highlights
 
-- Automated ORM Generation: Dynamically maps DOORS formal modules into strictly typed Python objects.
-- Pydantic Type Safety: Automatically converts DOORS drop-down choices into strict Python `Literal` types, providing IDE autocomplete and validation.
-- Headless DXL Execution: Interacts directly with the DOORS database in batch mode (no GUI required) with built-in memory management.
-- Agnostic Core Engine: Completely decouples project-specific business logic from the core DOORS extraction mechanics.
+- **Automated ORM Generation**: Dynamically maps DOORS formal modules into strictly typed Python objects.
+- **Pydantic Type Safety**: Automatically converts DOORS drop-down choices into strict Python `Literal` types, providing IDE autocomplete and validation.
+- **Headless DXL Execution**: Interacts directly with the DOORS database in batch mode (no GUI required) with built-in memory management.
+- **Agnostic Core Engine**: Completely decouples project-specific business logic from the core DOORS extraction mechanics.
 
 ## Overview
 
