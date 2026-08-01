@@ -9,8 +9,6 @@ from pydantic import TypeAdapter
 
 CURRENT_WORKING_DIR = Path.cwd()
 TMP_DIR = CURRENT_WORKING_DIR / "tmp"
-GENERATED_DIR = CURRENT_WORKING_DIR / "generated"
-DOORS_PATHS_PATH = GENERATED_DIR / "doors_paths.json"
 
 # Template Paths
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -82,19 +80,24 @@ def generate_paths(
     )
 
 
-def generate_models() -> None:
-    """Triggers datamodel-codegen to build the Python models."""
-    print("Generating Python models via datamodel-codegen...")
+def generate_models(target_dir: Path) -> None:
+    """Triggers datamodel-codegen targeted at a specific output directory."""
+    print(
+        f"Generating Python models in {target_dir.relative_to(CURRENT_WORKING_DIR)}..."
+    )
+    schema_path = target_dir / "schema.json"
+    models_path = target_dir / "models.py"
+
     try:
         subprocess.run(
             [
                 "datamodel-codegen",
                 "--input",
-                "generated/schema.json",
+                str(schema_path),
                 "--input-file-type",
                 "jsonschema",
                 "--output",
-                "generated/models.py",
+                str(models_path),
                 "--output-model-type",
                 "pydantic_v2.BaseModel",
                 "--class-name",
@@ -143,17 +146,22 @@ def extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pat
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
-def load_data_into_models(json_file_path: Path) -> list:
-    """Loads the extracted DOORS JSON into Pydantic models."""
-
-    # Delayed import to prevent crash if models haven't been generated yet
+def load_data_into_models(
+    json_file_path: Path, models_module_path: str = "generated.models"
+) -> list:
+    """Loads the extracted DOORS JSON into Pydantic models from a given module path."""
     if str(CURRENT_WORKING_DIR) not in sys.path:
         sys.path.insert(0, str(CURRENT_WORKING_DIR))
 
     try:
-        from generated.models import DoorsObject
-    except ImportError as e:
-        raise ImportError("Models not found. Run with '--profile models' first.") from e
+        import importlib
+
+        mod = importlib.import_module(models_module_path)
+        DoorsObject = getattr(mod, "DoorsObject")
+    except (ImportError, AttributeError) as e:
+        raise ImportError(
+            f"Models not found at '{models_module_path}'. Run with '--profile models' first."
+        ) from e
 
     with json_file_path.open("r", encoding="cp1252") as f:
         raw_json_string = f.read()
@@ -181,18 +189,25 @@ def _get_args() -> argparse.Namespace:
         help="Absolute DOORS path to the target module.",
     )
     parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=str,
+        default="generated",
+        help="Target output directory relative to working folder (e.g. 'generated/MODULE').",
+    )
+    parser.add_argument(
         "-r",
         "--root-path",
         type=str,
         default="/",
-        help="Absolute DOORS path to the root folder to retrieve paths from (defaults to '/').",
+        help="Absolute DOORS path to root folder for paths profile.",
     )
     parser.add_argument(
         "-e",
         "--doors-exe",
         type=str,
         default=os.getenv("DOORS_EXE_PATH"),
-        help="Path to doors.exe (defaults to DOORS_EXE_PATH environment variable).",
+        help="Path to doors.exe (defaults to DOORS_EXE_PATH env var).",
     )
 
     return parser.parse_args()
@@ -201,10 +216,12 @@ def _get_args() -> argparse.Namespace:
 def main() -> None:
     args = _get_args()
 
-    GENERATED_DIR.mkdir(exist_ok=True)
-    schema_output_path = GENERATED_DIR / "schema.json"
-    data_output_path = GENERATED_DIR / "module_data.json"
-    paths_output_path = GENERATED_DIR / "doors_paths.json"
+    target_dir: Path = CURRENT_WORKING_DIR / args.output_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    schema_output_path = target_dir / "schema.json"
+    data_output_path = target_dir / "module_data.json"
+    paths_output_path = target_dir / "doors_paths.json"
 
     requires_doors = args.profile in ["schema", "data", "paths", "all"]
     doors_exe_path = None
@@ -212,7 +229,7 @@ def main() -> None:
     if requires_doors:
         if not args.doors_exe:
             print(
-                "ERROR: DOORS executable path is missing. Set the DOORS_EXE_PATH environment variable or use the '--doors-exe' flag.",
+                "ERROR: DOORS executable path missing. Set DOORS_EXE_PATH env var or use '--doors-exe'.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -226,12 +243,10 @@ def main() -> None:
             sys.exit(1)
 
     try:
-        # Generate Database Paths
         if args.profile == "paths":
             generate_paths(doors_exe_path, paths_output_path, args.root_path)
             return
 
-        # Extract Schema from DOORS
         if args.profile in ["schema", "all"]:
             if not args.module_path:
                 print(
@@ -245,22 +260,16 @@ def main() -> None:
                 f"Schema saved to {schema_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
             )
 
-        # Generate Python Models
         if args.profile in ["models", "all"]:
             if not schema_output_path.exists():
                 print(
-                    f"ERROR: Cannot generate models. '{schema_output_path.name}' not found.",
-                    file=sys.stderr,
-                )
-                print(
-                    "Run with '--profile schema' first to extract it from DOORS.",
+                    f"ERROR: Cannot generate models. '{schema_output_path.name}' not found at {target_dir}.",
                     file=sys.stderr,
                 )
                 sys.exit(1)
 
-            generate_models()
+            generate_models(target_dir)
 
-        # Extract Actual Data
         if args.profile == "data":
             if not args.module_path:
                 print(
