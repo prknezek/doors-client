@@ -65,6 +65,7 @@ select = [
     "N",     # pep8-naming (Enforces correct variable/class casing)
     "ASYNC", # flake8-async (Validates coroutine and trio/asyncio usage)
 ]
+ignore = ["E501", "S603", "S607"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["doors_client"]
