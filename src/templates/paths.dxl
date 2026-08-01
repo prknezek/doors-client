@@ -1,0 +1,101 @@
+pragma runLim, 0
+
+// Helper function to log errors safely in batch mode without freezing DOORS
+void logError(string msg) {
+    print "ERROR: " msg "\n"
+    halt
+}
+
+// Locate the FLRAA Avionics folder
+Folder rootFolder = folder("%ROOT_FOLDER_PATH%")
+
+if (null rootFolder) {
+    logError("Could not find folder '%ROOT_FOLDER_PATH%' anywhere in the database.")
+}
+
+string outputFilePath = "%OUTPUT_FILE_PATH%"
+Stream outStream = write(outputFilePath)
+
+if (null outStream) {
+    logError("Could not open file for writing. Check your folder permissions and path.")
+}
+
+Buffer tempBuf = create()
+
+// Recursive function to dig through folders and projects
+void buildDbTree(Folder f, int depth) {
+    Item itm
+    bool firstItem = true
+   
+    // Variables needed for substring search
+    int offset = 0
+    int len = 0
+
+    for itm in f do {
+        string itemName = name(itm)
+        string itemType = type(itm)
+
+        if (!firstItem) { tempBuf += ",\n" }
+        firstItem = false
+
+        // Write the indentation directly to the buffer
+
+        int i
+        for (i = 0; i < depth; i++) {
+            tempBuf += "  "
+        }
+
+        tempBuf += "\""
+        tempBuf += itemName
+        tempBuf += "\": "
+
+        // If the item is a container, get its folder handle and recurse
+        if (itemType == "Folder" || itemType == "Project") {
+            tempBuf += "{\n"
+           
+            // Flush buffer to file before digging deeper
+            outStream << tempBuf
+            setempty(tempBuf)
+           
+            Folder subFolder = folder(fullName(itm))
+            if (!null subFolder) {
+                // Get everything inside this folder.
+                buildDbTree(subFolder, depth + 1)
+            }
+           
+            tempBuf += "\n"
+            for (i = 0; i < depth; i++) {
+                tempBuf += "  "
+            }
+            tempBuf += "}"
+           
+        } else {
+            // It is a leaf node (Formal Module, Link Module, Document, etc.)
+            tempBuf += "{}"
+        }
+       
+        // Write the buffer to the file and instantly clear it from memory
+        outStream << tempBuf
+        setempty(tempBuf)
+    }
+}
+
+// Start building the JSON with the selected root Folder Name
+tempBuf += "{\n"
+tempBuf += "  \""
+tempBuf += name(rootFolder)
+tempBuf += "\": {\n"
+
+outStream << tempBuf
+setempty(tempBuf)
+
+// Begin the recursion at depth 2 (4 spaces)
+buildDbTree(rootFolder, 2)
+
+// Close the JSON object
+tempBuf += "\n  }\n}\n"
+outStream << tempBuf
+
+// Clean up all memory allocations and release the file lock
+delete(tempBuf)
+close(outStream)
