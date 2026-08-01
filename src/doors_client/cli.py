@@ -22,11 +22,19 @@ _cached_password = None
 
 
 def _get_credentials() -> tuple[str, str]:
-    """Prompts for DOORS credentials once and caches them for subsequent DXL runs."""
+    """Prompts for credentials once (or reads env vars) and caches them."""
     global _cached_user, _cached_password
-    if _cached_user is None or _cached_password is None:
-        _cached_user = input("DOORS Username: ")
-        _cached_password = getpass.getpass("DOORS Password: ")
+
+    if _cached_user is None:
+        _cached_user = os.environ.get("DOORS_USER")
+        if not _cached_user:
+            _cached_user = input("DOORS Username: ")
+
+    if _cached_password is None:
+        _cached_password = os.environ.get("DOORS_PASSWORD")
+        if not _cached_password:
+            _cached_password = getpass.getpass("DOORS Password: ")
+
     return _cached_user, _cached_password
 
 
@@ -122,9 +130,7 @@ def get_doors_schema(module_path: str, doors_exe: Path, output_file_path: Path) 
         "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
         "%MODULE_PATH%": module_path,
     }
-    dxl_path = _render_dxl_template(
-        SCHEMA_DXL_TEMPLATE_PATH, replacements
-    )
+    dxl_path = _render_dxl_template(SCHEMA_DXL_TEMPLATE_PATH, replacements)
 
     user, password = _get_credentials()
     print(f"Extracting DOORS schema for {module_path}...")
@@ -137,9 +143,7 @@ def extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pat
         "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
         "%MODULE_PATH%": module_path,
     }
-    dxl_path = _render_dxl_template(
-        EXPORT_DXL_TEMPLATE_PATH, replacements
-    )
+    dxl_path = _render_dxl_template(EXPORT_DXL_TEMPLATE_PATH, replacements)
 
     user, password = _get_credentials()
     print(f"Extracting data from {module_path}...")
