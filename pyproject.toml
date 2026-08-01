@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doors-client"
+version = "0.1.0"
+description = "A Python wrapper for interacting with IBM Rational DOORS."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Payton Knezek", email = "prknezek@gmail.com" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+# Core project dependencies
+dependencies = ["pydantic", "datamodel-code-generator"]
+
+[project.optional-dependencies]
+# Dev dependencies (install via `pip install -e .[dev]`)
+dev = ["ruff>=0.3.0"]
+
+[project.urls]
+Homepage = "https://github.com"
+
+# --- Tool Configurations ---
+
+[tool.datamodel-codegen]
+input = "generated/schema.json"
+input-file-type = "jsonschema"
+output = "generated/models.py"
+output-model-type = "pydantic_v2.BaseModel"
+formatters = ["builtin"]
+class-name = "DoorsObject"
+snake-case-field = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "F",     # Pyflakes (Unused imports, undefined names)
+    "E",     # pycodestyle errors (PEP 8 violations)
+    "W",     # pycodestyle warnings
+    "I",     # isort (Automatic import sorting)
+    "UP",    # pyupgrade (Modernizes older Python syntax)
+    "B",     # flake8-bugbear (Catches tricky design flaws)
+    "SIM",   # flake8-simplify (Helps refactor complex logical expressions)
+    "S",     # flake8-bandit (Security checks like hardcoded passwords)
+    "N",     # pep8-naming (Enforces correct variable/class casing)
+    "ASYNC", # flake8-async (Validates coroutine and trio/asyncio usage)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["doors-client"]
