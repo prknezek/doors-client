@@ -112,6 +112,8 @@ def _generate_models(target_dir: Path) -> None:
                 "--class-name",
                 "DoorsObject",
                 "--snake-case-field",
+                "--base-class",
+                "doors_client.base.BaseDoorsObject",
             ],
             cwd=CURRENT_WORKING_DIR,
             check=True,
