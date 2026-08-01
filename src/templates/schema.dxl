@@ -1,0 +1,122 @@
+pragma runLim, 0
+
+// Helper function to log errors safely in batch mode without freezing DOORS
+void logError(string msg) {
+    print "ERROR: " msg "\n"
+    halt
+}
+
+// Inject the path from Python
+string modulePath = "%MODULE_PATH%"
+
+// Open the module as read-only
+Module m = read(modulePath, false)
+
+if (null m) {
+    logError("Could not open module at path: " modulePath)
+}
+
+string outputFilePath = "%OUTPUT_FILE_PATH%"
+Stream outStream = write(outputFilePath)
+
+if (null outStream) {
+    logError("Could not open file for writing. Check your folder permissions and path.")
+}
+
+AttrDef ad
+AttrType at
+Buffer tempBuf = create()
+
+// Helper function to map DOORS data types to JSON Schema types
+string mapJsonType(string doorsType) {
+    if (doorsType == "Integer") return "integer"
+    if (doorsType == "Real")    return "number"
+    if (doorsType == "Boolean") return "boolean"
+    return "string"
+}
+
+// Start building the formal JSON Schema
+tempBuf += "{\n"
+tempBuf += "  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n"
+tempBuf += "  \"title\": \"DoorsObject\",\n"
+tempBuf += "  \"type\": \"object\",\n"
+tempBuf += "  \"properties\": {\n"
+
+outStream << tempBuf
+setempty(tempBuf)
+
+bool firstProp = true
+
+for ad in m do {
+    if (null ad) continue
+    if (ad.object) {
+       
+        at = ad.type
+        if (null at) continue
+       
+        if (!firstProp) { outStream << ",\n" }
+        firstProp = false
+       
+        string attrName = ad.name
+        string jsonType = mapJsonType(at.name)
+       
+        tempBuf += "    \""
+        tempBuf += attrName
+        tempBuf += "\": {\n"
+       
+        // --- HANDLE ENUMERATIONS (Drop-down lists in DOORS) ---
+        if (at.type == attrEnumeration) {
+           
+            // Check if it's strictly a True/False boolean
+            bool isBoolEnum = false
+            if (at.size == 2) {
+                if ((at.strings[0] == "True" && at.strings[1] == "False") ||
+                    (at.strings[0] == "False" && at.strings[1] == "True")) {
+                    isBoolEnum = true
+                }
+            }
+           
+            if (isBoolEnum) {
+                // DOORS unassigned booleans export as null. Allow it.
+                tempBuf += "      \"type\": [\"boolean\", \"null\"]\n"
+            } else {
+                // Output as a string with allowed choices
+                tempBuf += "      \"type\": \"string\",\n"
+                tempBuf += "      \"enum\": ["
+               
+                int i
+                for (i = 0; i < at.size; i++) {
+                    if (i > 0) { tempBuf += ", " }
+                    tempBuf += "\""
+                    tempBuf += at.strings[i]
+                    tempBuf += "\""
+                }
+               
+                // Explicitly add the empty string for unassigned attributes
+                tempBuf += ", \"\"]\n"
+            }
+           
+        } else {
+            // Normal types (Integers, standard Strings, Text)
+            // DOORS attributes are often empty, so allow null for everything
+            tempBuf += "      \"type\": [\""
+            tempBuf += jsonType
+            tempBuf += "\", \"null\"]\n"
+        }
+       
+        tempBuf += "    }"
+       
+        outStream << tempBuf
+        setempty(tempBuf)
+    }
+}
+
+// Close the JSON object
+tempBuf += "\n  }\n}\n"
+outStream << tempBuf
+
+delete(tempBuf)
+close(outStream)
+
+// Clean up by closing the module when finished
+close(m)
