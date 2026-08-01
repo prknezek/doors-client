@@ -1,5 +1,6 @@
 # DOORS-to-Python ORM
 
+![PyPI](https://img.shields.io/pypi/v/doors-client)
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Pydantic](https://img.shields.io/badge/pydantic-v2-FF43A1)
 ![DOORS](https://img.shields.io/badge/IBM_DOORS-9.7-0530ad)
@@ -19,11 +20,11 @@ This project acts as an automated Object-Relational Mapper (ORM) for DOORS. It u
 
 ## Usage
 
-Generate models and extract data directly from the CLI using the agnostic engine:
+Generate models and extract data directly from the CLI using the newly installed terminal command:
 
 ```bash
 # Extract the schema, generate models, and pull data using an absolute DOORS path
-python generate.py --profile all --module-path "/Project Name/System Subfolder/Requirements/Target Formal Module"
+doors-client --profile all --module-path "/Project Name/System Subfolder/Requirements/Target Formal Module"
 ```
 
 Once extracted, interact with your DOORS data natively in Python:
@@ -48,7 +49,13 @@ verification_status
 
 ## Installation
 
-Ensure you have Python 3.10+ installed, then install the required Python dependencies:
+Ensure you have Python 3.10+ installed. You can install the package directly from PyPI:
+
+```bash
+pip install doors-client
+```
+
+If you are cloning the repository for local development, install the required Python dependencies with:
 
 ```bash
 pip install -e .

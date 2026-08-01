@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doors-client"
-version = "0.1.0"
+version = "0.2.2"
 description = "A Python wrapper for interacting with IBM Rational DOORS."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,7 +26,15 @@ dependencies = ["pydantic", "datamodel-code-generator"]
 dev = ["ruff>=0.3.0"]
 
 [project.urls]
-Homepage = "https://github.com"
+Homepage = "https://github.com/prknezek/doors-client"
+Repository = "https://github.com/prknezek/doors-client"
+Issues = "https://github.com/prknezek/doors-client/issues"
+
+[project.scripts]
+doors-client = "doors_client.cli:main"
+
+[tool.setuptools.package-data]
+doors_client = ["templates/*.dxl"]
 
 # --- Tool Configurations ---
 
@@ -59,4 +67,4 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["doors-client"]
+known-first-party = ["doors_client"]

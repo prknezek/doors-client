@@ -7,14 +7,16 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-TMP_DIR = ROOT_DIR / "tmp"
-GENERATED_DIR = ROOT_DIR / "generated"
+CURRENT_WORKING_DIR = Path.cwd()
+TMP_DIR = CURRENT_WORKING_DIR / "tmp"
+GENERATED_DIR = CURRENT_WORKING_DIR / "generated"
+DOORS_PATHS_PATH = GENERATED_DIR / "doors_paths.json"
 
 # Template Paths
-SCHEMA_DXL_TEMPLATE_PATH = ROOT_DIR / "src" / "templates" / "schema.dxl"
-EXPORT_DXL_TEMPLATE_PATH = ROOT_DIR / "src" / "templates" / "export.dxl"
-PATHS_DXL_TEMPLATE_PATH = ROOT_DIR / "src" / "templates" / "paths.dxl"
+PACKAGE_DIR = Path(__file__).resolve().parent
+SCHEMA_DXL_TEMPLATE_PATH = PACKAGE_DIR / "templates" / "schema.dxl"
+EXPORT_DXL_TEMPLATE_PATH = PACKAGE_DIR / "templates" / "export.dxl"
+PATHS_DXL_TEMPLATE_PATH = PACKAGE_DIR / "templates" / "paths.dxl"
 
 # Global variables to cache credentials
 _cached_user = None
@@ -58,19 +60,26 @@ def _run_dxl(dxl_path: Path, doors_exe: Path, user: str, password: str) -> None:
     except subprocess.CalledProcessError as e:
         print(f"FAILED to run DXL script: {dxl_path.name}", file=sys.stderr)
         print(f"ERROR:\n{e.stderr}", file=sys.stderr)
-        raise
+        sys.exit(1)
 
 
-def generate_paths(doors_exe: Path, output_file_path: Path) -> None:
+def generate_paths(
+    doors_exe: Path, output_file_path: Path, root_folder_path: str
+) -> None:
     """Generates the database paths JSON via DOORS."""
-    print("Generating database paths from DOORS...")
+    print(f"Generating database paths from DOORS folder '{root_folder_path}'...")
     user, password = _get_credentials()
 
-    replacements = {"%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix()}
+    replacements = {
+        "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
+        "%ROOT_FOLDER_PATH%": root_folder_path,
+    }
     dxl_path = _render_dxl_template(PATHS_DXL_TEMPLATE_PATH, "paths.dxl", replacements)
 
     _run_dxl(dxl_path, doors_exe, user, password)
-    print(f"Paths generated successfully to {output_file_path.relative_to(ROOT_DIR)}\n")
+    print(
+        f"Paths generated successfully to {output_file_path.relative_to(CURRENT_WORKING_DIR)}\n"
+    )
 
 
 def generate_models() -> None:
@@ -78,17 +87,30 @@ def generate_models() -> None:
     print("Generating Python models via datamodel-codegen...")
     try:
         subprocess.run(
-            ["datamodel-codegen"],
-            cwd=ROOT_DIR,
+            [
+                "datamodel-codegen",
+                "--input",
+                "generated/schema.json",
+                "--input-file-type",
+                "jsonschema",
+                "--output",
+                "generated/models.py",
+                "--output-model-type",
+                "pydantic_v2.BaseModel",
+                "--class-name",
+                "DoorsObject",
+                "--snake-case-field",
+            ],
+            cwd=CURRENT_WORKING_DIR,
             check=True,
             capture_output=True,
             text=True,
         )
         print("Models generated successfully!")
     except subprocess.CalledProcessError as e:
-        print("FAILED to generate models.")
-        print(f"ERROR:\n{e.stderr}")
-        raise
+        print("FAILED to generate models.", file=sys.stderr)
+        print(f"ERROR:\n{e.stderr}", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_doors_schema(module_path: str, doors_exe: Path, output_file_path: Path) -> None:
@@ -125,6 +147,9 @@ def load_data_into_models(json_file_path: Path) -> list:
     """Loads the extracted DOORS JSON into Pydantic models."""
 
     # Delayed import to prevent crash if models haven't been generated yet
+    if str(CURRENT_WORKING_DIR) not in sys.path:
+        sys.path.insert(0, str(CURRENT_WORKING_DIR))
+
     try:
         from generated.models import DoorsObject
     except ImportError as e:
@@ -156,12 +181,17 @@ def _get_args() -> argparse.Namespace:
         help="Absolute DOORS path to the target module.",
     )
     parser.add_argument(
+        "-r",
+        "--root-path",
+        type=str,
+        default="/",
+        help="Absolute DOORS path to the root folder to retrieve paths from (defaults to '/').",
+    )
+    parser.add_argument(
         "-e",
         "--doors-exe",
         type=str,
-        default=os.getenv(
-            "DOORS_EXE_PATH", "C:/BHTProgramFiles/IBM/Rational/DOORS/9.7/bin/doors.exe"
-        ),
+        default=os.getenv("DOORS_EXE_PATH"),
         help="Path to doors.exe (defaults to DOORS_EXE_PATH environment variable).",
     )
 
@@ -176,22 +206,29 @@ def main() -> None:
     data_output_path = GENERATED_DIR / "module_data.json"
     paths_output_path = GENERATED_DIR / "doors_paths.json"
 
-    doors_exe_path = Path(args.doors_exe)
-    if not doors_exe_path.exists() and args.profile in [
-        "schema",
-        "data",
-        "paths",
-        "all",
-    ]:
-        print(
-            f"ERROR: DOORS executable not found at '{doors_exe_path}'", file=sys.stderr
-        )
-        sys.exit(1)
+    requires_doors = args.profile in ["schema", "data", "paths", "all"]
+    doors_exe_path = None
+
+    if requires_doors:
+        if not args.doors_exe:
+            print(
+                "ERROR: DOORS executable path is missing. Set the DOORS_EXE_PATH environment variable or use the '--doors-exe' flag.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        doors_exe_path = Path(args.doors_exe)
+        if not doors_exe_path.exists():
+            print(
+                f"ERROR: DOORS executable not found at '{doors_exe_path}'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     try:
         # Generate Database Paths
         if args.profile == "paths":
-            generate_paths(doors_exe_path, paths_output_path)
+            generate_paths(doors_exe_path, paths_output_path, args.root_path)
             return
 
         # Extract Schema from DOORS
@@ -204,14 +241,15 @@ def main() -> None:
                 sys.exit(1)
 
             get_doors_schema(args.module_path, doors_exe_path, schema_output_path)
-            print(f"Schema saved to {schema_output_path.relative_to(ROOT_DIR)}\n")
+            print(
+                f"Schema saved to {schema_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
+            )
 
         # Generate Python Models
         if args.profile in ["models", "all"]:
             if not schema_output_path.exists():
                 print(
-                    f"ERROR: Cannot generate models. \
-                    '{schema_output_path.name}' not found.",
+                    f"ERROR: Cannot generate models. '{schema_output_path.name}' not found.",
                     file=sys.stderr,
                 )
                 print(
@@ -232,7 +270,9 @@ def main() -> None:
                 sys.exit(1)
 
             extract_module_data(args.module_path, doors_exe_path, data_output_path)
-            print(f"Data saved to {data_output_path.relative_to(ROOT_DIR)}\n")
+            print(
+                f"Data saved to {data_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
+            )
 
     except Exception as e:
         print(f"\nExecution Aborted: {e}", file=sys.stderr)
