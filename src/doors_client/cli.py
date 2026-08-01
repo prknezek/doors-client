@@ -72,7 +72,7 @@ def generate_paths(
         "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
         "%ROOT_FOLDER_PATH%": root_folder_path,
     }
-    dxl_path = _render_dxl_template(PATHS_DXL_TEMPLATE_PATH, "paths.dxl", replacements)
+    dxl_path = _render_dxl_template(PATHS_DXL_TEMPLATE_PATH, replacements)
 
     _run_dxl(dxl_path, doors_exe, user, password)
     print(
@@ -123,7 +123,7 @@ def get_doors_schema(module_path: str, doors_exe: Path, output_file_path: Path) 
         "%MODULE_PATH%": module_path,
     }
     dxl_path = _render_dxl_template(
-        SCHEMA_DXL_TEMPLATE_PATH, "schema.dxl", replacements
+        SCHEMA_DXL_TEMPLATE_PATH, replacements
     )
 
     user, password = _get_credentials()
@@ -138,7 +138,7 @@ def extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pat
         "%MODULE_PATH%": module_path,
     }
     dxl_path = _render_dxl_template(
-        EXPORT_DXL_TEMPLATE_PATH, "export.dxl", replacements
+        EXPORT_DXL_TEMPLATE_PATH, replacements
     )
 
     user, password = _get_credentials()
