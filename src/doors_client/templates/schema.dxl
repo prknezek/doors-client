@@ -66,6 +66,9 @@ for ad in m do {
        
         // --- HANDLE ENUMERATIONS (Drop-down lists in DOORS) ---
         if (at.type == attrEnumeration) {
+
+            // Check if multiple values are allowed
+            bool isMulti = ad.multi
            
             // Check if it's strictly a True/False boolean
             bool isBoolEnum = false
@@ -79,11 +82,13 @@ for ad in m do {
             if (isBoolEnum) {
                 // DOORS unassigned booleans export as null. Allow it.
                 tempBuf += "      \"type\": [\"boolean\", \"null\"]\n"
-            } else {
-                // Output as a string with allowed choices
-                tempBuf += "      \"type\": \"string\",\n"
-                tempBuf += "      \"enum\": ["
-               
+            } else if (isMulti) {
+                // Multi-select enumeration -> Array of strict choices
+                tempBuf += "      \"type\": [\"array\", \"null\"],\n"
+                tempBuf += "      \"items\": {\n"
+                tempBuf += "        \"type\": \"string\",\n"
+                tempBuf += "        \"enum\": ["
+                
                 int i
                 for (i = 0; i < at.size; i++) {
                     if (i > 0) { tempBuf += ", " }
@@ -91,7 +96,23 @@ for ad in m do {
                     tempBuf += at.strings[i]
                     tempBuf += "\""
                 }
-               
+                
+                // Add empty string in case of blank selections
+                tempBuf += ", \"\"]\n"
+                tempBuf += "      }\n"
+            } else {
+                // Single-select enumeration -> String with allowed choices
+                tempBuf += "      \"type\": \"string\",\n"
+                tempBuf += "      \"enum\": ["
+                
+                int i
+                for (i = 0; i < at.size; i++) {
+                    if (i > 0) { tempBuf += ", " }
+                    tempBuf += "\""
+                    tempBuf += at.strings[i]
+                    tempBuf += "\""
+                }
+                
                 // Explicitly add the empty string for unassigned attributes
                 tempBuf += ", \"\"]\n"
             }

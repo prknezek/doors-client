@@ -47,38 +47,38 @@ AttrType at
 for o in m do {
     // Skip deleted objects to prevent ghost data
     if (isDeleted(o)) continue
-   
+    
     if (!firstObj) { outStream << ",\n" }
     firstObj = false
-   
+    
     tempBuf += "  {\n"
     bool firstAttr = true
-   
+    
     for ad in m do {
         if (!ad.object) continue
-       
+        
         if (!firstAttr) { tempBuf += ",\n" }
         firstAttr = false
-       
+        
         string attrName = ad.name
         at = ad.type
-       
+        
         // Use probeAttr_ to safely extract dynamic attribute names
         string val = probeAttr_(o, attrName)
-       
+        
         tempBuf += "    \""
         tempBuf += attrName
         tempBuf += "\": "
-       
+        
         // Handle specialized True/False enumerations (output native boolean)
         bool isBoolEnum = false
-        if (at.type == attrEnumeration && at.size == 2) {
+        if (at.type == attrEnumeration && at.size == 2 && !ad.multi) {
             if ((at.strings[0] == "True" && at.strings[1] == "False") ||
                 (at.strings[0] == "False" && at.strings[1] == "True")) {
                 isBoolEnum = true
             }
         }
-       
+        
         if (isBoolEnum) {
             if (val == "True") { tempBuf += "true" }
             else if (val == "False") { tempBuf += "false" }
@@ -89,17 +89,52 @@ for o in m do {
             if (val == "") { tempBuf += "null" }
             else { tempBuf += val }
         }
+        // Handle multi-select enumerations
+        else if (at.type == attrEnumeration && ad.multi) {
+            if (val == "") { 
+                tempBuf += "null" 
+            } else {
+                tempBuf += "["
+                bool firstItem = true
+                int startIdx = 0
+                int i
+                
+                // Manually split the string by newlines (\n) to build the JSON array
+                for (i = 0; i < length(val); i++) {
+                    if (val[i] == '\n') {
+                        if (!firstItem) { tempBuf += ", " }
+                        tempBuf += "\""
+                        if (i > startIdx) {
+                            appendEscapedJSON(tempBuf, val[startIdx:i-1])
+                        }
+                        tempBuf += "\""
+                        firstItem = false
+                        startIdx = i + 1
+                    }
+                }
+                
+                // Process the final element after the last newline
+                if (startIdx < length(val)) {
+                    if (!firstItem) { tempBuf += ", " }
+                    tempBuf += "\""
+                    appendEscapedJSON(tempBuf, val[startIdx:length(val)-1])
+                    tempBuf += "\""
+                }
+                
+                tempBuf += "]"
+            }
+        }
         // Handle text and standard drop-down enumerations safely
         else {
             tempBuf += "\""
             appendEscapedJSON(tempBuf, val)
             tempBuf += "\""
         }
-       
+        
         outStream << tempBuf
         setempty(tempBuf)
     }
-   
+    
     tempBuf += "\n  }"
     outStream << tempBuf
     setempty(tempBuf)
