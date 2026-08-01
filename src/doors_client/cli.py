@@ -70,7 +70,7 @@ def _run_dxl(dxl_path: Path, doors_exe: Path, user: str, password: str) -> None:
             dxl_path.unlink()
 
 
-def generate_paths(
+def _generate_paths(
     doors_exe: Path, output_file_path: Path, root_folder_path: str
 ) -> None:
     """Generates the database paths JSON via DOORS."""
@@ -89,7 +89,7 @@ def generate_paths(
     )
 
 
-def generate_models(target_dir: Path) -> None:
+def _generate_models(target_dir: Path) -> None:
     """Triggers datamodel-codegen targeted at a specific output directory."""
     print(
         f"Generating Python models in {target_dir.relative_to(CURRENT_WORKING_DIR)}..."
@@ -125,7 +125,7 @@ def generate_models(target_dir: Path) -> None:
         sys.exit(1)
 
 
-def get_doors_schema(module_path: str, doors_exe: Path, output_file_path: Path) -> None:
+def _extract_schema(module_path: str, doors_exe: Path, output_file_path: Path) -> None:
     """Coordinates the extraction of the schema from DOORS."""
     replacements = {
         "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
@@ -138,7 +138,7 @@ def get_doors_schema(module_path: str, doors_exe: Path, output_file_path: Path) 
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
-def extract_module_data(module_path: str, doors_exe: Path, output_file_path: Path):
+def _extract_module_data(module_path: str, doors_exe: Path, output_file_path: Path):
     """Extracts actual requirement data from DOORS into a JSON file."""
     replacements = {
         "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
@@ -152,7 +152,7 @@ def extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pat
 
 
 @overload
-def load_data_into_models(module_dir: Path) -> list:
+def load_module(module_dir: Path) -> list:
     """
     Loads data by automatically inferring the data and
     models files from a module directory.
@@ -161,14 +161,12 @@ def load_data_into_models(module_dir: Path) -> list:
 
 
 @overload
-def load_data_into_models(
-    module_data_path: Path, models_path: str = "generated.models"
-) -> list:
+def load_module(module_data_path: Path, models_path: str = "generated.models") -> list:
     """Loads data using explicitly provided file and module paths."""
     ...
 
 
-def load_data_into_models(path: Path, models_path: str | None = None) -> list:
+def load_module(path: Path, models_path: str | None = None) -> list:
     """Loads the extracted DOORS JSON into Pydantic models from a given path."""
     if str(CURRENT_WORKING_DIR) not in sys.path:
         sys.path.insert(0, str(CURRENT_WORKING_DIR))
@@ -282,7 +280,7 @@ def main() -> None:
 
     try:
         if args.profile == "paths":
-            generate_paths(doors_exe_path, paths_output_path, args.root_path)
+            _generate_paths(doors_exe_path, paths_output_path, args.root_path)
             return
 
         if args.profile in ["schema", "all"]:
@@ -293,7 +291,7 @@ def main() -> None:
                 )
                 sys.exit(1)
 
-            get_doors_schema(args.module_path, doors_exe_path, schema_output_path)
+            _extract_schema(args.module_path, doors_exe_path, schema_output_path)
             print(
                 f"Schema saved to {schema_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
             )
@@ -306,7 +304,7 @@ def main() -> None:
                 )
                 sys.exit(1)
 
-            generate_models(target_dir)
+            _generate_models(target_dir)
 
         if args.profile in ["data", "all"]:
             if not args.module_path:
@@ -316,7 +314,7 @@ def main() -> None:
                 )
                 sys.exit(1)
 
-            extract_module_data(args.module_path, doors_exe_path, data_output_path)
+            _extract_module_data(args.module_path, doors_exe_path, data_output_path)
             print(
                 f"Data saved to {data_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
             )
