@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import overload
 
 from pydantic import TypeAdapter
 
@@ -58,10 +59,10 @@ def _run_dxl(dxl_path: Path, doors_exe: Path, user: str, password: str) -> None:
     """Generic function to execute any given DXL script via the DOORS batch CLI."""
     cmd = [str(doors_exe), "-u", user, "-P", password, "-b", str(dxl_path)]
     try:
-        print(f"Running DXL script via OS temp file...")
+        print(f"Running DXL script {dxl_path.name} via OS temp file...")
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print(f"FAILED to run DXL script.", file=sys.stderr)
+        print("FAILED to run DXL script.", file=sys.stderr)
         print(f"ERROR:\n{e.stderr}", file=sys.stderr)
         sys.exit(1)
     finally:
@@ -150,27 +151,60 @@ def extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pat
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
+@overload
+def load_data_into_models(module_dir: Path) -> list:
+    """
+    Loads data by automatically inferring the data and
+    models files from a module directory.
+    """
+    ...
+
+
+@overload
 def load_data_into_models(
-    json_file_path: Path, models_module_path: str = "generated.models"
+    module_data_path: Path, models_path: str = "generated.models"
 ) -> list:
-    """Loads the extracted DOORS JSON into Pydantic models from a given module path."""
+    """Loads data using explicitly provided file and module paths."""
+    ...
+
+
+def load_data_into_models(path: Path, models_path: str | None = None) -> list:
+    """Loads the extracted DOORS JSON into Pydantic models from a given path."""
     if str(CURRENT_WORKING_DIR) not in sys.path:
         sys.path.insert(0, str(CURRENT_WORKING_DIR))
 
+    # Overload resolution logic
+    if path.is_dir():
+        # User passed a directory: Infer the JSON file and Python module path
+        module_data_path = path / "module_data.json"
+
+        # Convert path to a Python dot-notation module string
+        try:
+            rel_path = path.resolve().relative_to(CURRENT_WORKING_DIR.resolve())
+        except ValueError:
+            rel_path = path  # Fallback if path is already relative or outside CWD
+
+        target_models_path = ".".join(rel_path.parts) + ".models"
+    else:
+        # User passed a direct file path
+        module_data_path = path
+        target_models_path = models_path if models_path else "generated.models"
+
+    # Core execution logic
     try:
         import importlib
 
-        mod = importlib.import_module(models_module_path)
-        DoorsObject = getattr(mod, "DoorsObject")
+        mod = importlib.import_module(target_models_path)
+        doors_object = mod.DoorsObject
     except (ImportError, AttributeError) as e:
         raise ImportError(
-            f"Models not found at '{models_module_path}'. Run with '--profile models' first."
+            f"Models not found at '{target_models_path}'. Run with '--profile models' first."
         ) from e
 
-    with json_file_path.open("r", encoding="cp1252") as f:
+    with module_data_path.open("r", encoding="cp1252") as f:
         raw_json_string = f.read()
 
-    adapter = TypeAdapter(list[DoorsObject])
+    adapter = TypeAdapter(list[doors_object])
     return adapter.validate_json(raw_json_string)
 
 
