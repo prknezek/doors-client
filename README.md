@@ -61,4 +61,6 @@ pip install -e .
 
 ## License
 
-This is free software: you can redistribute it and/or modify it under the terms of the **BSD 3-clause License.** A copy of this license is provided in LICENSE.
+doors-client is distributed under the MIT license. See the included LICENSE file for details.
+
+I am providing code in the repository to you under an open source license. Because this is my personal repository, the license you receive to my code is from me and not my employer.
