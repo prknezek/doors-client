@@ -5,6 +5,20 @@
 ![Pydantic](https://img.shields.io/badge/pydantic-v2-FF43A1)
 ![DOORS](https://img.shields.io/badge/IBM_DOORS-9.7-0530ad)
 
+## Installation
+
+Ensure you have Python 3.10+ installed. You can install the package directly from PyPI:
+
+```bash
+pip install doors-client
+```
+
+If you are cloning the repository for local development, install the required Python dependencies with:
+
+```bash
+pip install -e .
+```
+
 ## Highlights
 
 - Automated ORM Generation: Dynamically maps DOORS formal modules into strictly typed Python objects.
@@ -45,20 +59,6 @@ Once extracted, interact with your DOORS data natively in Python:
 ValidationError: 1 validation error for DoorsObject
 verification_status
   Input should be 'Passed', 'Failed', 'Pending', or '' [type=literal_error, input_value='Invalid Status', input_type=str]
-```
-
-## Installation
-
-Ensure you have Python 3.10+ installed. You can install the package directly from PyPI:
-
-```bash
-pip install doors-client
-```
-
-If you are cloning the repository for local development, install the required Python dependencies with:
-
-```bash
-pip install -e .
 ```
 
 ## System Requirements
