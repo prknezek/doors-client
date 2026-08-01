@@ -3,6 +3,7 @@ import getpass
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from pydantic import TypeAdapter
@@ -30,35 +31,35 @@ def _get_credentials() -> tuple[str, str]:
     return _cached_user, _cached_password
 
 
-def _render_dxl_template(
-    template_path: Path, temp_filename: str, replacements: dict[str, str]
-) -> Path:
-    """Generic function to read a DXL template, replace variables, and save to tmp."""
+def _render_dxl_template(template_path: Path, replacements: dict[str, str]) -> Path:
+    """Reads a DXL template, replaces variables, and writes to a secure OS temp file."""
     with template_path.open("r", encoding="utf-8") as f:
         dxl = f.read()
 
     for key, value in replacements.items():
         dxl = dxl.replace(key, value)
 
-    TMP_DIR.mkdir(parents=True, exist_ok=True)
-    temp_dxl_path = TMP_DIR / temp_filename
+    temp_fd, temp_path = tempfile.mkstemp(suffix=".dxl", text=True)
 
-    with temp_dxl_path.open("w", encoding="utf-8") as f:
+    with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
         f.write(dxl)
 
-    return temp_dxl_path
+    return Path(temp_path)
 
 
 def _run_dxl(dxl_path: Path, doors_exe: Path, user: str, password: str) -> None:
     """Generic function to execute any given DXL script via the DOORS batch CLI."""
     cmd = [str(doors_exe), "-u", user, "-P", password, "-b", str(dxl_path)]
     try:
-        print(f"Running DXL script: {dxl_path.name}...")
-        subprocess.run(cmd, check=True)
+        print(f"Running DXL script via OS temp file...")
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print(f"FAILED to run DXL script: {dxl_path.name}", file=sys.stderr)
+        print(f"FAILED to run DXL script.", file=sys.stderr)
         print(f"ERROR:\n{e.stderr}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if dxl_path.exists():
+            dxl_path.unlink()
 
 
 def generate_paths(
@@ -270,7 +271,7 @@ def main() -> None:
 
             generate_models(target_dir)
 
-        if args.profile == "data":
+        if args.profile in ["data", "all"]:
             if not args.module_path:
                 print(
                     "ERROR: '--module-path' is required to extract data.",
