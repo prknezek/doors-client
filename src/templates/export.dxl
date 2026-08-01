@@ -1,0 +1,113 @@
+pragma runLim, 0
+
+// Helper function to log errors safely in batch mode
+void logError(string msg) {
+    print "ERROR: " msg "\n"
+    halt
+}
+
+// Function to safely escape strings and append directly to the main buffer.
+void appendEscapedJSON(Buffer b, string s) {
+    int i
+    for (i = 0; i < length(s); i++) {
+        char c = s[i]
+        if (c == '"') { b += "\\\"" }
+        else if (c == '\\') { b += "\\\\" }
+        else if (c == '\n') { b += "\\n" }
+        else if (c == '\r') { b += "\\r" }
+        else if (c == '\t') { b += "\\t" }
+        else { b += c }
+    }
+}
+
+string modulePath = "%MODULE_PATH%"
+Module m = read(modulePath, false)
+
+if (null m) {
+    logError("Could not open module at path: " modulePath)
+}
+
+string outputFilePath = "%OUTPUT_FILE_PATH%"
+Stream outStream = write(outputFilePath)
+
+if (null outStream) {
+    logError("Could not open file for writing.")
+}
+
+Buffer tempBuf = create()
+tempBuf += "[\n"
+outStream << tempBuf
+setempty(tempBuf)
+
+bool firstObj = true
+Object o
+AttrDef ad
+AttrType at
+
+for o in m do {
+    // Skip deleted objects to prevent ghost data
+    if (isDeleted(o)) continue
+   
+    if (!firstObj) { outStream << ",\n" }
+    firstObj = false
+   
+    tempBuf += "  {\n"
+    bool firstAttr = true
+   
+    for ad in m do {
+        if (!ad.object) continue
+       
+        if (!firstAttr) { tempBuf += ",\n" }
+        firstAttr = false
+       
+        string attrName = ad.name
+        at = ad.type
+       
+        // Use probeAttr_ to safely extract dynamic attribute names
+        string val = probeAttr_(o, attrName)
+       
+        tempBuf += "    \""
+        tempBuf += attrName
+        tempBuf += "\": "
+       
+        // Handle specialized True/False enumerations (output native boolean)
+        bool isBoolEnum = false
+        if (at.type == attrEnumeration && at.size == 2) {
+            if ((at.strings[0] == "True" && at.strings[1] == "False") ||
+                (at.strings[0] == "False" && at.strings[1] == "True")) {
+                isBoolEnum = true
+            }
+        }
+       
+        if (isBoolEnum) {
+            if (val == "True") { tempBuf += "true" }
+            else if (val == "False") { tempBuf += "false" }
+            else { tempBuf += "null" }
+        }
+        // Handle native numbers
+        else if (at.name == "Integer" || at.name == "Real") {
+            if (val == "") { tempBuf += "null" }
+            else { tempBuf += val }
+        }
+        // Handle text and standard drop-down enumerations safely
+        else {
+            tempBuf += "\""
+            appendEscapedJSON(tempBuf, val)
+            tempBuf += "\""
+        }
+       
+        outStream << tempBuf
+        setempty(tempBuf)
+    }
+   
+    tempBuf += "\n  }"
+    outStream << tempBuf
+    setempty(tempBuf)
+}
+
+tempBuf += "\n]\n"
+outStream << tempBuf
+
+delete(tempBuf)
+close(outStream)
+close(m)
