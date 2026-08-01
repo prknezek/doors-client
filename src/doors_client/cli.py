@@ -9,7 +9,6 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 CURRENT_WORKING_DIR = Path.cwd()
-TMP_DIR = CURRENT_WORKING_DIR / "tmp"
 
 # Template Paths
 PACKAGE_DIR = Path(__file__).resolve().parent
