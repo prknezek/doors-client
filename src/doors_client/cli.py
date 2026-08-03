@@ -9,6 +9,8 @@ from typing import overload
 
 from pydantic import TypeAdapter
 
+from doors_client.base import DoorsList
+
 CURRENT_WORKING_DIR = Path.cwd()
 
 # Template Paths
@@ -62,9 +64,7 @@ def _run_dxl(dxl_path: Path, doors_exe: Path, user: str, password: str) -> None:
         print(f"Running DXL script {dxl_path.name} via OS temp file...")
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print("FAILED to run DXL script.", file=sys.stderr)
-        print(f"ERROR:\n{e.stderr}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"FAILED to run DXL script.\nERROR:\n{e.stderr}") from e
     finally:
         if dxl_path.exists():
             dxl_path.unlink()
@@ -122,9 +122,7 @@ def _generate_models(target_dir: Path) -> None:
         )
         print("Models generated successfully!")
     except subprocess.CalledProcessError as e:
-        print("FAILED to generate models.", file=sys.stderr)
-        print(f"ERROR:\n{e.stderr}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"FAILED to generate models.\nERROR:\n{e.stderr}") from e
 
 
 def _extract_schema(module_path: str, doors_exe: Path, output_file_path: Path) -> None:
@@ -153,59 +151,151 @@ def _extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pa
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
+def _sync_module(
+    profile: str,
+    target_dir: Path,
+    doors_exe: Path | None,
+    module_path: str | None = None,
+    root_path: str = "/",
+) -> None:
+    """Orchestrates the extraction and generation pipeline based on the requested profile."""
+    schema_output_path = target_dir / "schema.json"
+    data_output_path = target_dir / "module_data.json"
+    paths_output_path = target_dir / "doors_paths.json"
+
+    if profile == "paths":
+        _generate_paths(doors_exe, paths_output_path, root_path)
+        return
+
+    if profile in ["schema", "all"]:
+        if not module_path:
+            raise ValueError("'module_path' is required to generate schema.")
+        _extract_schema(module_path, doors_exe, schema_output_path)
+        print(
+            f"Schema saved to {schema_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
+        )
+
+    if profile in ["models", "all"]:
+        if not schema_output_path.exists():
+            raise FileNotFoundError(
+                f"Cannot generate models. '{schema_output_path.name}' not found at {target_dir}."
+            )
+        _generate_models(target_dir)
+
+    if profile in ["data", "all"]:
+        if not module_path:
+            raise ValueError("'module_path' is required to extract data.")
+        _extract_module_data(module_path, doors_exe, data_output_path)
+        print(f"Data saved to {data_output_path.relative_to(CURRENT_WORKING_DIR)}\n")
+
+
 @overload
-def load_module(module_dir: Path) -> list:
-    """
-    Loads data by automatically inferring the data and
-    models files from a module directory.
-    """
+def load_module(module_dir: Path) -> DoorsList:
+    """Loads data from a local directory (e.g., Path('generated/MODULE'))."""
     ...
 
 
 @overload
-def load_module(module_data_path: Path, models_path: str = "generated.models") -> list:
-    """Loads data using explicitly provided file and module paths."""
+def load_module(
+    module_data_path: Path, models_path: str = "generated.models"
+) -> DoorsList:
+    """Loads data using explicitly provided local file paths."""
     ...
 
 
-def load_module(path: Path, models_path: str | None = None) -> list:
-    """Loads the extracted DOORS JSON into Pydantic models from a given path."""
+@overload
+def load_module(
+    doors_module_path: str,
+    output_dir: Path,
+    doors_exe: Path | None = None,
+    force_refresh: bool = False,
+) -> DoorsList:
+    """
+    Connects to DOORS to extract the schema and data, generates models,
+    and loads the resulting objects. Caches locally to speed up future runs.
+    """
+    ...
+
+
+def load_module(
+    path_or_doors_id: Path | str,
+    models_path_or_out_dir: str | Path | None = None,
+    doors_exe: Path | None = None,
+    force_refresh: bool = False,
+) -> DoorsList:
+    """Core implementation handling local loads and remote DOORS extractions."""
+
     if str(CURRENT_WORKING_DIR) not in sys.path:
         sys.path.insert(0, str(CURRENT_WORKING_DIR))
 
-    # Overload resolution logic
-    if path.is_dir():
-        # User passed a directory: Infer the JSON file and Python module path
-        module_data_path = path / "module_data.json"
+    # --- User passed a DOORS absolute path (e.g., "/Project/Module") ---
+    if isinstance(path_or_doors_id, str):
+        doors_path = path_or_doors_id
+        target_dir = (
+            Path(models_path_or_out_dir)
+            if models_path_or_out_dir
+            else CURRENT_WORKING_DIR / "generated" / Path(doors_path).name
+        )
 
-        # Convert path to a Python dot-notation module string
+        # Check if we need to hit DOORS, or if we can use cached files
+        data_exists = (target_dir / "module_data.json").exists()
+        schema_exists = (target_dir / "schema.json").exists()
+
+        if force_refresh or not (data_exists and schema_exists):
+            print(f"Syncing {doors_path} from DOORS...")
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Resolve DOORS executable
+            exe_path = doors_exe or Path(os.getenv("DOORS_EXE_PATH", ""))
+            if not exe_path.exists():
+                raise FileNotFoundError(
+                    "DOORS executable not found. Set DOORS_EXE_PATH or pass doors_exe."
+                )
+
+            # Call the shared pipeline
+            _sync_module(
+                profile="all",
+                target_dir=target_dir,
+                doors_exe=exe_path,
+                module_path=doors_path,
+            )
+
+        return load_module(target_dir)
+
+    # --- User passed a local directory ---
+    elif path_or_doors_id.is_dir():
+        module_data_path = path_or_doors_id / "module_data.json"
         try:
-            rel_path = path.resolve().relative_to(CURRENT_WORKING_DIR.resolve())
+            rel_path = path_or_doors_id.resolve().relative_to(
+                CURRENT_WORKING_DIR.resolve()
+            )
         except ValueError:
-            rel_path = path  # Fallback if path is already relative or outside CWD
-
+            rel_path = path_or_doors_id
         target_models_path = ".".join(rel_path.parts) + ".models"
-    else:
-        # User passed a direct file path
-        module_data_path = path
-        target_models_path = models_path if models_path else "generated.models"
 
-    # Core execution logic
+    # --- User passed a direct file path ---
+    else:
+        module_data_path = path_or_doors_id
+        target_models_path = (
+            str(models_path_or_out_dir)
+            if models_path_or_out_dir
+            else "generated.models"
+        )
+
+    # --- Core Execution Logic ---
     try:
         import importlib
 
         mod = importlib.import_module(target_models_path)
         doors_object = mod.DoorsObject
     except (ImportError, AttributeError) as e:
-        raise ImportError(
-            f"Models not found at '{target_models_path}'. Run with '--profile models' first."
-        ) from e
+        raise ImportError(f"Models not found at '{target_models_path}'.") from e
 
     with module_data_path.open("r", encoding="cp1252") as f:
         raw_json_string = f.read()
 
     adapter = TypeAdapter(list[doors_object])
-    return adapter.validate_json(raw_json_string)
+    return DoorsList(adapter.validate_json(raw_json_string))
 
 
 def _get_args() -> argparse.Namespace:
@@ -257,10 +347,6 @@ def main() -> None:
     target_dir: Path = CURRENT_WORKING_DIR / args.output_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    schema_output_path = target_dir / "schema.json"
-    data_output_path = target_dir / "module_data.json"
-    paths_output_path = target_dir / "doors_paths.json"
-
     requires_doors = args.profile in ["schema", "data", "paths", "all"]
     doors_exe_path = None
 
@@ -281,46 +367,13 @@ def main() -> None:
             sys.exit(1)
 
     try:
-        if args.profile == "paths":
-            _generate_paths(doors_exe_path, paths_output_path, args.root_path)
-            return
-
-        if args.profile in ["schema", "all"]:
-            if not args.module_path:
-                print(
-                    "ERROR: '--module-path' is required to generate schema.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            _extract_schema(args.module_path, doors_exe_path, schema_output_path)
-            print(
-                f"Schema saved to {schema_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
-            )
-
-        if args.profile in ["models", "all"]:
-            if not schema_output_path.exists():
-                print(
-                    f"ERROR: Cannot generate models. '{schema_output_path.name}' not found at {target_dir}.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            _generate_models(target_dir)
-
-        if args.profile in ["data", "all"]:
-            if not args.module_path:
-                print(
-                    "ERROR: '--module-path' is required to extract data.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            _extract_module_data(args.module_path, doors_exe_path, data_output_path)
-            print(
-                f"Data saved to {data_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
-            )
-
+        _sync_module(
+            profile=args.profile,
+            target_dir=target_dir,
+            doors_exe=doors_exe_path,
+            module_path=args.module_path,
+            root_path=args.root_path,
+        )
     except Exception as e:
         print(f"\nExecution Aborted: {e}", file=sys.stderr)
         sys.exit(1)
