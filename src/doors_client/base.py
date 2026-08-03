@@ -1,6 +1,5 @@
-from collections.abc import Callable
 from enum import Enum
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -88,46 +87,58 @@ T = TypeVar("T", bound=BaseDoorsObject)
 
 
 class DoorsList(list[T]):
-    """A custom list for DoorsObjects with type-safe filtering."""
+    """A custom list for DoorsObjects that allows keyword filtering."""
 
-    def match(self, selector: Callable[[T], Any], value: Any) -> "DoorsList[T]":
+    def filter(self, **kwargs) -> "DoorsList[T]":
         """
-        Filters the list using a lambda selector.
+        Filters the list by matching exact keyword arguments.
+        Allows chaining multiple filters.
 
         Example:
-            objs.match(lambda req: req.airworthiness_relevant, AirworthinessRelevant.yes)
+            objs.filter(created_by="user1", status="Draft")
         """
         result = DoorsList[T]()
 
-        # Normalize the target value to a string for safe comparison
-        target_str = value.value if isinstance(value, Enum) else str(value)
-
         for obj in self:
-            try:
-                # Execute the lambda to grab the actual attribute safely
-                actual_val = selector(obj)
-            except AttributeError:
-                continue
+            match = True
 
-            if actual_val is None:
-                continue
+            for key, target_val in kwargs.items():
+                # Safely extract the attribute from the generated Pydantic model
+                actual_val = getattr(obj, key, None)
 
-            # Handle DOORS multi-select fields
-            if isinstance(actual_val, list):
-                actual_strings = [
-                    v.value if isinstance(v, Enum) else str(v) for v in actual_val
-                ]
-                if target_str in actual_strings:
-                    result.append(obj)
+                if actual_val is None:
+                    match = False
+                    break
 
-            # Handle standard single values
-            else:
-                actual_str = (
-                    actual_val.value
-                    if isinstance(actual_val, Enum)
-                    else str(actual_val)
+                # Normalize the target value to a string for safe comparison
+                target_str = (
+                    target_val.value
+                    if isinstance(target_val, Enum)
+                    else str(target_val)
                 )
-                if target_str == actual_str:
-                    result.append(obj)
+
+                # Handle DOORS multi-select fields (which generate as lists)
+                if isinstance(actual_val, list):
+                    actual_strings = [
+                        v.value if isinstance(v, Enum) else str(v) for v in actual_val
+                    ]
+                    if target_str not in actual_strings:
+                        match = False
+                        break
+
+                # Handle standard single values (strings, ints, or single Enums)
+                else:
+                    actual_str = (
+                        actual_val.value
+                        if isinstance(actual_val, Enum)
+                        else str(actual_val)
+                    )
+                    if target_str != actual_str:
+                        match = False
+                        break
+
+            # If all keyword arguments matched successfully, keep the object
+            if match:
+                result.append(obj)
 
         return result
