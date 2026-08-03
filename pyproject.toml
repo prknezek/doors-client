@@ -46,6 +46,7 @@ output-model-type = "pydantic_v2.BaseModel"
 formatters = ["builtin"]
 class-name = "DoorsObject"
 snake-case-field = true
+base-class = "doors_client.base.BaseDoorsObject"
 
 [tool.ruff]
 target-version = "py310"
