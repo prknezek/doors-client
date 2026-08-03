@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from enum import Enum
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -79,3 +81,53 @@ class BaseDoorsObject(BaseModel):
             else getattr(self, "object_text", "")
         )
         print(f"[{getattr(self, 'absolute_number', 'N/A')}]: {text}")
+
+
+# Generic TypeVar bound to the BaseDoorsObject
+T = TypeVar("T", bound=BaseDoorsObject)
+
+
+class DoorsList(list[T]):
+    """A custom list for DoorsObjects with type-safe filtering."""
+
+    def match(self, selector: Callable[[T], Any], value: Any) -> "DoorsList[T]":
+        """
+        Filters the list using a lambda selector.
+
+        Example:
+            objs.match(lambda req: req.airworthiness_relevant, AirworthinessRelevant.yes)
+        """
+        result = DoorsList[T]()
+
+        # Normalize the target value to a string for safe comparison
+        target_str = value.value if isinstance(value, Enum) else str(value)
+
+        for obj in self:
+            try:
+                # Execute the lambda to grab the actual attribute safely
+                actual_val = selector(obj)
+            except AttributeError:
+                continue
+
+            if actual_val is None:
+                continue
+
+            # Handle DOORS multi-select fields
+            if isinstance(actual_val, list):
+                actual_strings = [
+                    v.value if isinstance(v, Enum) else str(v) for v in actual_val
+                ]
+                if target_str in actual_strings:
+                    result.append(obj)
+
+            # Handle standard single values
+            else:
+                actual_str = (
+                    actual_val.value
+                    if isinstance(actual_val, Enum)
+                    else str(actual_val)
+                )
+                if target_str == actual_str:
+                    result.append(obj)
+
+        return result
