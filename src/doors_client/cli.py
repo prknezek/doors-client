@@ -1,9 +1,11 @@
 import argparse
 import getpass
+import logging
 import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
 from typing import overload
 
@@ -22,6 +24,9 @@ PATHS_DXL_TEMPLATE_PATH = PACKAGE_DIR / "templates" / "paths.dxl"
 # Global variables to cache credentials
 _cached_user = None
 _cached_password = None
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 
 def _get_credentials() -> tuple[str, str]:
@@ -49,7 +54,9 @@ def _render_dxl_template(template_path: Path, replacements: dict[str, str]) -> P
     for key, value in replacements.items():
         dxl = dxl.replace(key, value)
 
-    temp_fd, temp_path = tempfile.mkstemp(suffix=".dxl", text=True)
+    temp_fd, temp_path = tempfile.mkstemp(
+        prefix=f"{template_path.stem}_", suffix=".dxl", text=True
+    )
 
     with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
         f.write(dxl)
@@ -61,12 +68,23 @@ def _run_dxl(dxl_path: Path, doors_exe: Path, user: str, password: str) -> None:
     """Generic function to execute any given DXL script via the DOORS batch CLI."""
     cmd = [str(doors_exe), "-u", user, "-P", password, "-b", str(dxl_path)]
     try:
-        print(f"Running DXL script {dxl_path.name} via OS temp file...")
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        logger.debug("Executing temporary DXL script: %s", dxl_path.name)
+
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        if result.stdout.strip():
+            indented_out = textwrap.indent(result.stdout.strip(), "    ")
+            logger.debug("DXL standard output:\n%s", indented_out)
+
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"FAILED to run DXL script.\nERROR:\n{e.stderr}") from e
+        indented_err = textwrap.indent(
+            e.stderr.strip() if e.stderr else "No stderr output.", "    "
+        )
+        logger.error("DXL script execution failed.\n%s", indented_err)
+        raise RuntimeError(f"Failed to run DXL script.\n{indented_err}") from e
     finally:
         if dxl_path.exists():
+            logger.debug("Cleaning up temporary file: %s", dxl_path)
             dxl_path.unlink()
 
 
@@ -74,7 +92,7 @@ def _generate_paths(
     doors_exe: Path, output_file_path: Path, root_folder_path: str
 ) -> None:
     """Generates the database paths JSON via DOORS."""
-    print(f"Generating database paths from DOORS folder '{root_folder_path}'...")
+    logger.info("Generating database paths for folder: '%s'", root_folder_path)
     user, password = _get_credentials()
 
     replacements = {
@@ -84,21 +102,22 @@ def _generate_paths(
     dxl_path = _render_dxl_template(PATHS_DXL_TEMPLATE_PATH, replacements)
 
     _run_dxl(dxl_path, doors_exe, user, password)
-    print(
-        f"Paths generated successfully to {output_file_path.relative_to(CURRENT_WORKING_DIR)}\n"
+    logger.info(
+        "Database paths successfully saved to: %s",
+        output_file_path.relative_to(CURRENT_WORKING_DIR),
     )
 
 
 def _generate_models(target_dir: Path) -> None:
     """Triggers datamodel-codegen targeted at a specific output directory."""
-    print(
-        f"Generating Python models in {target_dir.relative_to(CURRENT_WORKING_DIR)}..."
+    logger.info(
+        "Generating Python models in: %s", target_dir.relative_to(CURRENT_WORKING_DIR)
     )
     schema_path = target_dir / "schema.json"
     models_path = target_dir / "models.py"
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "datamodel-codegen",
                 "--input",
@@ -120,9 +139,17 @@ def _generate_models(target_dir: Path) -> None:
             capture_output=True,
             text=True,
         )
-        print("Models generated successfully!")
+        if result.stdout.strip():
+            indented_out = textwrap.indent(result.stdout.strip(), "    ")
+            logger.debug("datamodel-codegen standard output:\n%s", indented_out)
+
+        logger.info("Python models successfully generated.")
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"FAILED to generate models.\nERROR:\n{e.stderr}") from e
+        indented_err = textwrap.indent(
+            e.stderr.strip() if e.stderr else "No stderr output.", "    "
+        )
+        logger.error("Model generation failed.\n%s", indented_err)
+        raise RuntimeError(f"Failed to generate models.\n{indented_err}") from e
 
 
 def _extract_schema(module_path: str, doors_exe: Path, output_file_path: Path) -> None:
@@ -134,7 +161,7 @@ def _extract_schema(module_path: str, doors_exe: Path, output_file_path: Path) -
     dxl_path = _render_dxl_template(SCHEMA_DXL_TEMPLATE_PATH, replacements)
 
     user, password = _get_credentials()
-    print(f"Extracting DOORS schema for {module_path}...")
+    logger.info("Extracting DOORS schema for module: %s", module_path)
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
@@ -147,7 +174,7 @@ def _extract_module_data(module_path: str, doors_exe: Path, output_file_path: Pa
     dxl_path = _render_dxl_template(EXPORT_DXL_TEMPLATE_PATH, replacements)
 
     user, password = _get_credentials()
-    print(f"Extracting data from {module_path}...")
+    logger.info("Extracting data records from module: %s", module_path)
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
@@ -171,8 +198,9 @@ def _sync_module(
         if not module_path:
             raise ValueError("'module_path' is required to generate schema.")
         _extract_schema(module_path, doors_exe, schema_output_path)
-        print(
-            f"Schema saved to {schema_output_path.relative_to(CURRENT_WORKING_DIR)}\n"
+        logger.info(
+            "Schema successfully saved to: %s",
+            schema_output_path.relative_to(CURRENT_WORKING_DIR),
         )
 
     if profile in ["models", "all"]:
@@ -186,7 +214,10 @@ def _sync_module(
         if not module_path:
             raise ValueError("'module_path' is required to extract data.")
         _extract_module_data(module_path, doors_exe, data_output_path)
-        print(f"Data saved to {data_output_path.relative_to(CURRENT_WORKING_DIR)}\n")
+        logger.info(
+            "Data successfully saved to: %s",
+            data_output_path.relative_to(CURRENT_WORKING_DIR),
+        )
 
 
 @overload
@@ -242,7 +273,7 @@ def load_module(
         schema_exists = (target_dir / "schema.json").exists()
 
         if force_refresh or not (data_exists and schema_exists):
-            print(f"Syncing {doors_path} from DOORS...")
+            logger.info("Initiating sync for module: %s", doors_path)
             target_dir.mkdir(parents=True, exist_ok=True)
 
             # Resolve DOORS executable
@@ -337,12 +368,26 @@ def _get_args() -> argparse.Namespace:
         default=os.getenv("DOORS_EXE_PATH"),
         help="Path to doors.exe (defaults to DOORS_EXE_PATH env var).",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose debug logging.",
+    )
 
     return parser.parse_args()
 
 
 def main() -> None:
     args = _get_args()
+
+    # Configure clean, bracketed logging format
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="[%(asctime)s] %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     target_dir: Path = CURRENT_WORKING_DIR / args.output_dir
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -352,18 +397,14 @@ def main() -> None:
 
     if requires_doors:
         if not args.doors_exe:
-            print(
-                "ERROR: DOORS executable path missing. Set DOORS_EXE_PATH env var or use '--doors-exe'.",
-                file=sys.stderr,
+            logger.error(
+                "DOORS executable path missing. Set DOORS_EXE_PATH environment variable or use '--doors-exe'."
             )
             sys.exit(1)
 
         doors_exe_path = Path(args.doors_exe)
         if not doors_exe_path.exists():
-            print(
-                f"ERROR: DOORS executable not found at '{doors_exe_path}'",
-                file=sys.stderr,
-            )
+            logger.error("DOORS executable not found at: '%s'", doors_exe_path)
             sys.exit(1)
 
     try:
@@ -375,7 +416,7 @@ def main() -> None:
             root_path=args.root_path,
         )
     except Exception as e:
-        print(f"\nExecution Aborted: {e}", file=sys.stderr)
+        logger.error("Execution aborted: %s", e, exc_info=args.verbose)
         sys.exit(1)
 
 
