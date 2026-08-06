@@ -137,6 +137,48 @@ for o in all m do {
         setempty(tempBuf)
     }
     
+    // Out-links Extraction
+    tempBuf += ",\n    \"out_links\": ["
+    bool firstOutLink = true
+    Link l
+    for l in all(o -> "*") do {
+        if (!firstOutLink) { tempBuf += ", " }
+        firstOutLink = false
+        
+        ModName_ tgtMod = target(l)
+        Module lnkMod = module(l)
+        
+        tempBuf += "{\"link_module\": \""
+        appendEscapedJSON(tempBuf, fullName(lnkMod))
+        tempBuf += "\", \"target_module\": \""
+        appendEscapedJSON(tempBuf, fullName(tgtMod))
+        tempBuf += "\", \"target_id\": " 
+        tempBuf += targetAbsNo(l) ""
+        tempBuf += "}"
+    }
+    tempBuf += "]"
+
+    // In-links (LinkRef) Extraction
+    tempBuf += ",\n    \"in_links\": ["
+    bool firstInLink = true
+    LinkRef lr
+    for lr in all(o <- "*") do {
+        if (!firstInLink) { tempBuf += ", " }
+        firstInLink = false
+        
+        ModName_ srcMod = source(lr)
+        ModName_ lnkMod = module(lr)
+        
+        tempBuf += "{\"link_module\": \""
+        appendEscapedJSON(tempBuf, fullName(lnkMod))
+        tempBuf += "\", \"source_module\": \""
+        appendEscapedJSON(tempBuf, fullName(srcMod))
+        tempBuf += "\", \"source_id\": " 
+        tempBuf += sourceAbsNo(lr) ""
+        tempBuf += "}"
+    }
+    tempBuf += "]"
+    
     tempBuf += "\n  }"
     outStream << tempBuf
     setempty(tempBuf)

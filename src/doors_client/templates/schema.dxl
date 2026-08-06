@@ -50,26 +50,26 @@ bool firstProp = true
 for ad in m do {
     if (null ad) continue
     if (ad.object) {
-       
+        
         at = ad.type
         if (null at) continue
-       
+        
         if (!firstProp) { outStream << ",\n" }
         firstProp = false
-       
+        
         string attrName = ad.name
         string jsonType = mapJsonType(at.name)
-       
+        
         tempBuf += "    \""
         tempBuf += attrName
         tempBuf += "\": {\n"
-       
+        
         // --- HANDLE ENUMERATIONS (Drop-down lists in DOORS) ---
         if (at.type == attrEnumeration) {
 
             // Check if multiple values are allowed
             bool isMulti = ad.multi
-           
+            
             // Check if it's strictly a True/False boolean
             bool isBoolEnum = false
             if (at.size == 2) {
@@ -78,7 +78,7 @@ for ad in m do {
                     isBoolEnum = true
                 }
             }
-           
+            
             if (isBoolEnum) {
                 // DOORS unassigned booleans export as null. Allow it.
                 tempBuf += "      \"type\": [\"boolean\", \"null\"]\n"
@@ -116,7 +116,7 @@ for ad in m do {
                 // Explicitly add the empty string for unassigned attributes
                 tempBuf += ", \"\"]\n"
             }
-           
+            
         } else {
             // Normal types (Integers, standard Strings, Text)
             // DOORS attributes are often empty, so allow null for everything
@@ -124,16 +124,46 @@ for ad in m do {
             tempBuf += jsonType
             tempBuf += "\", \"null\"]\n"
         }
-       
+        
         tempBuf += "    }"
-       
+        
         outStream << tempBuf
         setempty(tempBuf)
     }
 }
 
-// Close the JSON object
-tempBuf += "\n  }\n}\n"
+// --- Static definitions for in_links and out_links ---
+tempBuf += ",\n"
+
+// out_links schema definition
+tempBuf += "    \"out_links\": {\n"
+tempBuf += "      \"type\": [\"array\", \"null\"],\n"
+tempBuf += "      \"items\": {\n"
+tempBuf += "        \"type\": \"object\",\n"
+tempBuf += "        \"properties\": {\n"
+tempBuf += "          \"link_module\": {\"type\": [\"string\", \"null\"]},\n"
+tempBuf += "          \"target_module\": {\"type\": [\"string\", \"null\"]},\n"
+tempBuf += "          \"target_id\": {\"type\": [\"integer\", \"null\"]}\n"
+tempBuf += "        }\n"
+tempBuf += "      }\n"
+tempBuf += "    },\n"
+
+// in_links schema definition
+tempBuf += "    \"in_links\": {\n"
+tempBuf += "      \"type\": [\"array\", \"null\"],\n"
+tempBuf += "      \"items\": {\n"
+tempBuf += "        \"type\": \"object\",\n"
+tempBuf += "        \"properties\": {\n"
+tempBuf += "          \"link_module\": {\"type\": [\"string\", \"null\"]},\n"
+tempBuf += "          \"source_module\": {\"type\": [\"string\", \"null\"]},\n"
+tempBuf += "          \"source_id\": {\"type\": [\"integer\", \"null\"]}\n"
+tempBuf += "        }\n"
+tempBuf += "      }\n"
+tempBuf += "    }\n"
+
+
+// Close the main properties and object
+tempBuf += "  }\n}\n"
 outStream << tempBuf
 
 delete(tempBuf)
