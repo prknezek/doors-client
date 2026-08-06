@@ -23,7 +23,7 @@ void appendEscapedJSON(Buffer b, string s) {
 string modulePath = "%MODULE_PATH%"
 bool includeDeleted = %INCLUDE_DELETED%
 
-Module m = read(modulePath, false)
+Module m = read(modulePath, false, true)
 
 if (null m) {
     logError("Could not open module at path: " modulePath)
@@ -190,3 +190,5 @@ outStream << tempBuf
 delete(tempBuf)
 close(outStream)
 close(m)
+
+halt

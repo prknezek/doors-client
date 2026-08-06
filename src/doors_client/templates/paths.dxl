@@ -99,3 +99,5 @@ outStream << tempBuf
 // Clean up all memory allocations and release the file lock
 delete(tempBuf)
 close(outStream)
+
+halt

@@ -10,7 +10,7 @@ void logError(string msg) {
 string modulePath = "%MODULE_PATH%"
 
 // Open the module as read-only
-Module m = read(modulePath, false)
+Module m = read(modulePath, false, true)
 
 if (null m) {
     logError("Could not open module at path: " modulePath)
@@ -171,3 +171,5 @@ close(outStream)
 
 // Clean up by closing the module when finished
 close(m)
+
+halt
