@@ -21,6 +21,8 @@ void appendEscapedJSON(Buffer b, string s) {
 }
 
 string modulePath = "%MODULE_PATH%"
+bool includeDeleted = %INCLUDE_DELETED%
+
 Module m = read(modulePath, false)
 
 if (null m) {
@@ -44,9 +46,9 @@ Object o
 AttrDef ad
 AttrType at
 
-for o in m do {
-    // Skip deleted objects to prevent ghost data
-    if (isDeleted(o)) continue
+for o in all m do {
+    // Skip deleted objects unless the Python CLI passed --include-deleted
+    if (!includeDeleted && isDeleted(o)) continue
     
     if (!firstObj) { outStream << ",\n" }
     firstObj = false

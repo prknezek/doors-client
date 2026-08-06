@@ -165,16 +165,23 @@ def _extract_schema(module_path: str, doors_exe: Path, output_file_path: Path) -
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
-def _extract_module_data(module_path: str, doors_exe: Path, output_file_path: Path):
+def _extract_module_data(
+    module_path: str, doors_exe: Path, output_file_path: Path, include_deleted: bool
+):
     """Extracts actual requirement data from DOORS into a JSON file."""
     replacements = {
         "%OUTPUT_FILE_PATH%": output_file_path.resolve().as_posix(),
         "%MODULE_PATH%": module_path,
+        "%INCLUDE_DELETED%": "true" if include_deleted else "false",
     }
     dxl_path = _render_dxl_template(EXPORT_DXL_TEMPLATE_PATH, replacements)
 
     user, password = _get_credentials()
-    logger.info("Extracting data records from module: %s", module_path)
+    logger.info(
+        "Extracting data records from module: %s (Include deleted: %s)",
+        module_path,
+        include_deleted,
+    )
     _run_dxl(dxl_path, doors_exe, user, password)
 
 
@@ -184,6 +191,7 @@ def _sync_module(
     doors_exe: Path | None,
     module_path: str | None = None,
     root_path: str = "/",
+    include_deleted: bool = False,
 ) -> None:
     """Orchestrates the extraction and generation pipeline based on the requested profile."""
     schema_output_path = target_dir / "schema.json"
@@ -213,7 +221,7 @@ def _sync_module(
     if profile in ["data", "all"]:
         if not module_path:
             raise ValueError("'module_path' is required to extract data.")
-        _extract_module_data(module_path, doors_exe, data_output_path)
+        _extract_module_data(module_path, doors_exe, data_output_path, include_deleted)
         logger.info(
             "Data successfully saved to: %s",
             data_output_path.relative_to(CURRENT_WORKING_DIR),
@@ -374,6 +382,11 @@ def _get_args() -> argparse.Namespace:
         action="store_true",
         help="Enable verbose debug logging.",
     )
+    parser.add_argument(
+        "--include-deleted",
+        action="store_true",
+        help="Include deleted objects in the extraction data.",
+    )
 
     return parser.parse_args()
 
@@ -414,6 +427,7 @@ def main() -> None:
             doors_exe=doors_exe_path,
             module_path=args.module_path,
             root_path=args.root_path,
+            include_deleted=args.include_deleted,
         )
     except Exception as e:
         logger.error("Execution aborted: %s", e, exc_info=args.verbose)
