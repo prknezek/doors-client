@@ -20,81 +20,6 @@ void appendEscapedJSON(Buffer b, string s) {
     }
 }
 
-// Helper function to extract only the trailing numeric digits from a DOORS ID
-string extractNumericId(string fullId) {
-    if (null fullId) return ""
-    int len = length(fullId)
-    int i = len - 1
-    
-    // Scan backward to find where the numbers start
-    while (i >= 0) {
-        char c = fullId[i]
-        if (c < '0' || c > '9') {
-            break
-        }
-        i--
-    }
-    
-    // Extract the substring containing only trailing digits
-    int numStart = i + 1
-    if (numStart >= len) return ""
-    return fullId[numStart:(len - 1)]
-}
-
-// Explicitly opens all linked modules in the background
-void openLinkedModules(Module mmm, Skip skipInlinks) {
-    Object o
-    LinkRef lr
-    Link outLink
-    ModuleVersion mvSource = null
-    ModuleVersion mvTarget = null
-    Module modLnk = null
-    string linkFullName = ""
-
-    for o in entire mmm do {
-        if (isDeleted(o) || null o) continue
-
-        // Pre-open Incoming Modules
-        for lr in all(o<-"*") do {
-            mvSource = sourceVersion lr
-            linkFullName = fullName(source lr)
-            modLnk = data mvSource
-            
-            if (null modLnk) {
-                modLnk = load(mvSource, false)
-            }
-            if (!null modLnk && !find(skipInlinks, linkFullName)) {
-                put(skipInlinks, linkFullName, modLnk)
-            }
-        }
-
-        // Pre-open Outgoing Modules
-        for outLink in all o->"*" do {
-            mvTarget = targetVersion outLink
-            linkFullName = fullName(target outLink)
-            modLnk = data mvTarget
-            
-            if (null modLnk) {
-                modLnk = load(mvTarget, false)
-            }
-            if (!null modLnk && !find(skipInlinks, linkFullName)) {
-                put(skipInlinks, linkFullName, modLnk)
-            }
-        }
-    }
-}
-
-// Closes background modules and removes tracking structures
-void closeLinkedModules(Skip skipInlinks) {
-    Module tempMod = null
-    for tempMod in skipInlinks do {
-        if (!null tempMod) {
-            close(tempMod)
-        }
-    }
-    delete(skipInlinks)
-}
-
 string modulePath = "%MODULE_PATH%"
 bool includeDeleted = %INCLUDE_DELETED%
 
@@ -104,16 +29,10 @@ if (null m) {
     logError("Could not open module at path: " modulePath)
 }
 
-// Initialize link tracking structures
-Skip skipInlinks = createString()
-openLinkedModules(m, skipInlinks)
-
 string outputFilePath = "%OUTPUT_FILE_PATH%"
 Stream outStream = write(outputFilePath)
 
 if (null outStream) {
-    closeLinkedModules(skipInlinks)
-    close(m)
     logError("Could not open file for writing.")
 }
 
@@ -218,52 +137,43 @@ for o in all m do {
         setempty(tempBuf)
     }
     
-    // --- Out-links Extraction (Using Object Handles) ---
+    // Out-links Extraction
     tempBuf += ",\n    \"out_links\": ["
     bool firstOutLink = true
     Link l
     for l in all(o -> "*") do {
-        Object tgt = target(l)
-        if (null tgt) continue
-        
         if (!firstOutLink) { tempBuf += ", " }
         firstOutLink = false
         
-        string tgtModName = fullName(module(tgt))
-        string lnkModName = fullName(module(l))
-        string shortId = extractNumericId(identifier(tgt))
+        ModName_ tgtMod = target(l)
+        Module lnkMod = module(l)
         
         tempBuf += "{\"link_module\": \""
-        appendEscapedJSON(tempBuf, lnkModName)
+        appendEscapedJSON(tempBuf, fullName(lnkMod))
         tempBuf += "\", \"target_module\": \""
-        appendEscapedJSON(tempBuf, tgtModName)
+        appendEscapedJSON(tempBuf, fullName(tgtMod))
         tempBuf += "\", \"target_id\": " 
-        if (shortId == "") { tempBuf += "null" } else { tempBuf += shortId }
+        tempBuf += targetAbsNo(l) ""
         tempBuf += "}"
     }
     tempBuf += "]"
 
-    // --- In-links Extraction (Using Object Handles) ---
+    // In-links (LinkRef) Extraction
     tempBuf += ",\n    \"in_links\": ["
     bool firstInLink = true
-    
-    for l in all(o <- "*") do {
-        Object src = source(l)
-        if (null src) continue
-        
+    LinkRef lr
+    for lr in all(o <- "*") do {
         if (!firstInLink) { tempBuf += ", " }
         firstInLink = false
         
-        string srcModName = fullName(module(src))
-        string lnkModName = fullName(module(l))
-        string shortId = extractNumericId(identifier(src))
+        ModName_ srcMod = source(lr)
         
         tempBuf += "{\"link_module\": \""
-        appendEscapedJSON(tempBuf, lnkModName)
+        appendEscapedJSON(tempBuf, fullName(module(lr)))
         tempBuf += "\", \"source_module\": \""
-        appendEscapedJSON(tempBuf, srcModName)
+        appendEscapedJSON(tempBuf, fullName(srcMod))
         tempBuf += "\", \"source_id\": " 
-        if (shortId == "") { tempBuf += "null" } else { tempBuf += shortId }
+        tempBuf += sourceAbsNo(lr) ""
         tempBuf += "}"
     }
     tempBuf += "]"
@@ -278,9 +188,6 @@ outStream << tempBuf
 
 delete(tempBuf)
 close(outStream)
-
-// Safely close background modules before shutting down
-closeLinkedModules(skipInlinks)
 close(m)
 
 halt
