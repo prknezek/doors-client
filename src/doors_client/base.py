@@ -87,44 +87,79 @@ T = TypeVar("T", bound=BaseDoorsObject)
 
 
 class DoorsList(list[T]):
-    """A custom list for DoorsObjects that allows keyword filtering."""
+    """A custom list for DoorsObjects that allows keyword filtering and O(1) ID lookups."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._id_index: dict[str, T] = {}
+        self._rebuild_index()
+
+    def _rebuild_index(self) -> None:
+        """Rebuilds the lookup dictionary from the current list contents."""
+        self._id_index.clear()
+        for obj in self:
+            abs_num = getattr(obj, "absolute_number", None)
+            if abs_num is not None:
+                # Store keys as strings so .get(12) and .get("12") both work
+                self._id_index[str(abs_num)] = obj
+
+    def append(self, item: T) -> None:
+        """Appends an item to the list and updates the index."""
+        super().append(item)
+        abs_num = getattr(item, "absolute_number", None)
+        if abs_num is not None:
+            self._id_index[str(abs_num)] = item
+
+    def extend(self, iterable) -> None:
+        """Extends the list and rebuilds the index."""
+        super().extend(iterable)
+        self._rebuild_index()
+
+    def get(self, absolute_number: int | str, default: T | None = None) -> T | None:
+        """
+        Retrieves an object by its absolute_number.
+
+        Example:
+            req = my_module.get(1024)
+        """
+        return self._id_index.get(str(absolute_number), default)
 
     def filter(self, **kwargs) -> "DoorsList[T]":
         """
         Filters the list by matching exact keyword arguments.
-        Allows chaining multiple filters.
-
-        Example:
-            objs.filter(created_by="user1", status="Draft")
+        If a target value is a list, tuple, or set, it acts as an "IN" operator.
         """
-        result = DoorsList[T]()
+        # Pre-process target values to fast sets
+        target_sets = {}
+        for key, target_val in kwargs.items():
+            if isinstance(target_val, (list, tuple, set)):
+                target_sets[key] = {
+                    v.value if isinstance(v, Enum) else str(v) for v in target_val
+                }
+            else:
+                target_sets[key] = {
+                    (
+                        target_val.value
+                        if isinstance(target_val, Enum)
+                        else str(target_val)
+                    )
+                }
 
-        for obj in self:
-            match = True
-
-            for key, target_val in kwargs.items():
-                # Safely extract the attribute from the generated Pydantic model
+        # Define a matching function for the generator
+        def matches(obj: T) -> bool:
+            for key, target_strings in target_sets.items():
                 actual_val = getattr(obj, key, None)
 
                 if actual_val is None:
-                    match = False
-                    break
+                    return False
 
-                # Normalize the target value to a string for safe comparison
-                target_str = (
-                    target_val.value
-                    if isinstance(target_val, Enum)
-                    else str(target_val)
-                )
-
-                # Handle DOORS multi-select fields (which generate as lists)
+                # Handle DOORS multi-select fields (lists)
                 if isinstance(actual_val, list):
-                    actual_strings = [
-                        v.value if isinstance(v, Enum) else str(v) for v in actual_val
-                    ]
-                    if target_str not in actual_strings:
-                        match = False
-                        break
+                    if not any(
+                        (v.value if isinstance(v, Enum) else str(v)) in target_strings
+                        for v in actual_val
+                    ):
+                        return False
 
                 # Handle standard single values (strings, ints, or single Enums)
                 else:
@@ -133,12 +168,10 @@ class DoorsList(list[T]):
                         if isinstance(actual_val, Enum)
                         else str(actual_val)
                     )
-                    if target_str != actual_str:
-                        match = False
-                        break
+                    if actual_str not in target_strings:
+                        return False
 
-            # If all keyword arguments matched successfully, keep the object
-            if match:
-                result.append(obj)
+            return True
 
-        return result
+        # Filter the objects based on matches
+        return DoorsList(obj for obj in self if matches(obj))
