@@ -124,7 +124,6 @@ class BaseDoorsObject(BaseModel):
         """
         target_ids = self.get_downstream_ids()
 
-        global DoorsList
         return DoorsList(
             obj for obj in (target_module.get(i) for i in target_ids) if obj is not None
         )
