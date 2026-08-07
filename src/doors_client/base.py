@@ -107,6 +107,28 @@ class BaseDoorsObject(BaseModel):
                 ids.append(int(source))
         return ids
 
+    def get_attr_str(self, attr_name: str, default: str | None = None) -> str | None:
+        """
+        Safely extracts an attribute as a string.
+        Automatically unpacks Pydantic Enums and handles missing/None values.
+        """
+        val = getattr(self, attr_name, None)
+        if val is None:
+            return default
+        return val.value if hasattr(val, "value") else str(val)
+
+    def get_downstream_objects(self, target_module: "DoorsList") -> "DoorsList":
+        """
+        Takes a target module and resolves out_links directly into objects.
+        Skips broken/missing links automatically.
+        """
+        target_ids = self.get_downstream_ids()
+
+        global DoorsList
+        return DoorsList(
+            obj for obj in (target_module.get(i) for i in target_ids) if obj is not None
+        )
+
     def print_summary(self) -> None:
         """Prints a summary of the object."""
         text = (
