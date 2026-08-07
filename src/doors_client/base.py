@@ -72,6 +72,41 @@ class BaseDoorsObject(BaseModel):
         """
         return not self.is_table and not self.is_heading
 
+    @property
+    def is_linked(self) -> bool:
+        """Returns True if the object has at least one incoming or outgoing link."""
+        out_links = getattr(self, "out_links", None) or []
+        in_links = getattr(self, "in_links", None) or []
+        return len(out_links) > 0 or len(in_links) > 0
+
+    @property
+    def is_orphan(self) -> bool:
+        """
+        Returns True if the object is a standard requirement
+        (not a heading, not a table) but has zero links.
+        """
+        return self.is_object and not self.is_linked
+
+    def get_downstream_ids(self) -> list[int]:
+        """Returns a flat list of target_id integers from out_links."""
+        out_links = getattr(self, "out_links", None) or []
+        ids = []
+        for link in out_links:
+            target = getattr(link, "target_id", None)
+            if target is not None:
+                ids.append(int(target))
+        return ids
+
+    def get_upstream_ids(self) -> list[int]:
+        """Returns a flat list of source_id integers from in_links."""
+        in_links = getattr(self, "in_links", None) or []
+        ids = []
+        for link in in_links:
+            source = getattr(link, "source_id", None)
+            if source is not None:
+                ids.append(int(source))
+        return ids
+
     def print_summary(self) -> None:
         """Prints a summary of the object."""
         text = (
@@ -128,22 +163,36 @@ class DoorsList(list[T]):
         """
         Filters the list by matching exact keyword arguments.
         If a target value is a list, tuple, or set, it acts as an "IN" operator.
+        If a target sequence contains DOORS objects, it automatically extracts
+        the matching attribute from those objects.
+
+        Example:
+            objs.filter(absolute_number=[1024, 1025])
+            objs.filter(absolute_number=list_of_doors_objects)
         """
-        # Pre-process target values to fast sets
         target_sets = {}
+
+        # Pre-process target values to fast sets
         for key, target_val in kwargs.items():
-            if isinstance(target_val, (list, tuple, set)):
-                target_sets[key] = {
-                    v.value if isinstance(v, Enum) else str(v) for v in target_val
-                }
-            else:
-                target_sets[key] = {
-                    (
-                        target_val.value
-                        if isinstance(target_val, Enum)
-                        else str(target_val)
-                    )
-                }
+            normalized_set = set()
+
+            # Ensure target_val is iterable for uniform processing
+            if not isinstance(target_val, (list, tuple, set)):
+                target_val = [target_val]
+
+            for v in target_val:
+                # If the item is a DOORS object, extract the attribute we are filtering by
+                if isinstance(v, BaseDoorsObject):
+                    v = getattr(v, key, None)
+
+                # If extraction failed or value was None, skip it
+                if v is None:
+                    continue
+
+                # Normalize to a string
+                normalized_set.add(v.value if isinstance(v, Enum) else str(v))
+
+            target_sets[key] = normalized_set
 
         # Define a matching function for the generator
         def matches(obj: T) -> bool:
@@ -175,3 +224,45 @@ class DoorsList(list[T]):
 
         # Filter the objects based on matches
         return DoorsList(obj for obj in self if matches(obj))
+
+    def search(self, query: str, case_sensitive: bool = False) -> "DoorsList[T]":
+        """
+        Iterates through the list and returns a new DoorsList of objects
+        where the query exists in either object_heading or object_text.
+        """
+        result = DoorsList[T]()
+
+        # Pre-process the query for speed
+        search_query = query if case_sensitive else query.lower()
+
+        for obj in self:
+            heading = getattr(obj, "object_heading", "") or ""
+            text = getattr(obj, "object_text", "") or ""
+
+            # Extract standard strings from Enums if necessary
+            heading_str = heading.value if hasattr(heading, "value") else str(heading)
+            text_str = text.value if hasattr(text, "value") else str(text)
+
+            if not case_sensitive:
+                heading_str = heading_str.lower()
+                text_str = text_str.lower()
+
+            if search_query in heading_str or search_query in text_str:
+                result.append(obj)
+
+        return result
+
+    def to_dataframe(self):
+        """
+        Converts the DoorsList into a Pandas DataFrame.
+        Requires the 'pandas' library to be installed.
+        """
+        try:
+            import pandas as pd
+        except ImportError as e:
+            raise ImportError(
+                "The 'pandas' library is required to use to_dataframe(). "
+                "Install it with: pip install pandas"
+            ) from e
+
+        return pd.DataFrame([obj.model_dump() for obj in self])
