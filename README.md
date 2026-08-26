@@ -34,31 +34,61 @@ This project acts as an automated Object-Relational Mapper (ORM) for DOORS. It u
 
 ## Usage
 
-Generate models and extract data directly from the CLI using the newly installed terminal command:
+Generate models and extract data directly from the CLI:
 
 ```bash
 # Extract the schema, generate models, and pull data using an absolute DOORS path
-doors-client --profile all --module-path "/Project Name/System Subfolder/Requirements/Target Formal Module"
+doors-client --module-path "/Project Name/System Subfolder/Requirements/Target Formal Module"
 ```
 
-Once extracted, interact with your DOORS data natively in Python:
+### Fast Lookups and Data Filtering
+Extract objects efficiently using an O(1) index or filter by exact attributes. The custom list natively handles complex DOORS enumerations, lists, and string normalization.
 
 ```py
->>> from pathlib import Path
->>> from pydantic import TypeAdapter
->>> from generated.models import DoorsObject
+from doors_client import load_module
 
-# Load your extracted data natively
->>> adapter = TypeAdapter(list[DoorsObject])
->>> reqs = adapter.validate_json(Path("generated/module_data.json").read_text(encoding="cp1252"))
+module = load_module("/Project Name/System/Requirements")
 
-# Enjoy full IDE autocomplete and strict type validation!
->>> print(reqs[0].absolute_number)
-155
->>> reqs[0].verification_status = "Invalid Status"
-ValidationError: 1 validation error for DoorsObject
-verification_status
-  Input should be 'Passed', 'Failed', 'Pending', or '' [type=literal_error, input_value='Invalid Status', input_type=str]
+# Retrieve an object by its DOORS absolute number
+req = module.get(1024)
+
+# Filter out DOORS tables and headings to isolate pure requirement objects
+pure_reqs = module.filter(is_object=True)
+
+# Search object headings and text for specific keywords
+safety_reqs = pure_reqs.search("safety critical", case_sensitive=False)
+```
+
+### Link Traceability Analysis
+Evaluate incoming and outgoing DOORS links dynamically. The generated base models provide built-in properties to identify link statuses and traverse relationships across different formal modules.
+
+```py
+system_module = load_module("/Project Name/System/Requirements")
+software_module = load_module("/Project Name/Software/Requirements")
+
+parent_req = system_module.get(50)
+
+# Quickly check a requirement's link status without needing to load external modules
+if parent_req.is_linked and not parent_req.is_orphan:
+    print(f"Object {parent_req.absolute_number} has active links.")
+
+# Resolve outgoing links directly into fully instantiated Pydantic objects
+downstream_objects = parent_req.get_downstream_objects(target_module=software_module)
+
+for child in downstream_objects:
+    child.print_summary()
+```
+
+### Pandas DataFrame Integration
+```py
+module = load_module("/Project Name/System/Requirements")
+
+# Export all loaded Pydantic objects directly to a Pandas DataFrame
+df = module.to_dataframe()
+
+# Perform analytics, such as identifying the deletion status of objects
+deleted_counts = df.groupby('is_deleted').size()
+print(deleted_counts)
 ```
 
 ## System Requirements
