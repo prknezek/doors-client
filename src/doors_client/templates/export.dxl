@@ -53,8 +53,19 @@ for o in all m do {
     if (!firstObj) { outStream << ",\n" }
     firstObj = false
     
+    // Inject static properties first
     tempBuf += "  {\n"
-    bool firstAttr = true
+    
+    tempBuf += "    \"is_deleted\": "
+    if (isDeleted(o)) { tempBuf += "true" } else { tempBuf += "false" }
+    tempBuf += ",\n"
+    
+    tempBuf += "    \"module_path\": \""
+    appendEscapedJSON(tempBuf, modulePath)
+    tempBuf += "\""
+    
+    // Set to false so the subsequent attribute loop prefixes with a comma
+    bool firstAttr = false 
     
     for ad in m do {
         if (!ad.object) continue

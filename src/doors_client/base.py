@@ -7,6 +7,9 @@ from pydantic import BaseModel
 class BaseDoorsObject(BaseModel):
     """Custom methods injected into all generated DOORS models."""
 
+    is_deleted: bool | None = False
+    module_path: str | None = None
+
     @property
     def _normalized_table_type(self) -> str:
         """Helper to safely extract and normalize the table type as a lowercase string."""

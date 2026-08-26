@@ -132,8 +132,18 @@ for ad in m do {
     }
 }
 
-// --- Static definitions for in_links and out_links ---
+// --- Static definitions for in_links, out_links, is_deleted, and module_path ---
 tempBuf += ",\n"
+
+// is_deleted schema definition
+tempBuf += "    \"is_deleted\": {\n"
+tempBuf += "      \"type\": [\"boolean\", \"null\"]\n"
+tempBuf += "    },\n"
+
+// module_path schema definition
+tempBuf += "    \"module_path\": {\n"
+tempBuf += "      \"type\": [\"string\", \"null\"]\n"
+tempBuf += "    },\n"
 
 // out_links schema definition
 tempBuf += "    \"out_links\": {\n"
