@@ -190,8 +190,21 @@ class DoorsList(list[T]):
         If a target sequence contains DOORS objects, it automatically extracts
         the matching attribute from those objects.
 
-        Example:
-            objs.filter(absolute_number=[1024, 1025])
+        Examples:
+            ### Match a single exact value
+            objs.filter(is_deleted=False)
+
+            ### Match multiple attributes simultaneously (AND logic)
+            objs.filter(is_deleted=False, is_table=False)
+
+            ### Match any value provided in a sequence (IN logic)
+            objs.filter(absolute_number=[1024, 1025, 1026])
+
+            ### Match against an Enum
+            objs.filter(status=StatusEnum.APPROVED)
+
+            ### Pass a list of DOORS objects to match their attributes automatically
+            *(e.g., finding objects in this list that share an absolute_number with objects in another list)*
             objs.filter(absolute_number=list_of_doors_objects)
         """
         target_sets = {}
