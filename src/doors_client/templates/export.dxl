@@ -46,7 +46,7 @@ Object o
 AttrDef ad
 AttrType at
 
-for o in all m do {
+for o in entire m do {
     // Skip deleted objects unless the Python CLI passed --include-deleted
     if (!shouldIncludeDeleted && isDeleted(o)) continue
     
